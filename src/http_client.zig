@@ -22,10 +22,19 @@ const Request = struct {
     extra_headers: []const std.http.Header = &.{},
 };
 
+fn normalizeToken(token: []const u8) []const u8 {
+    const trimmed = std.mem.trim(u8, token, " \t\r\n");
+    if (std.ascii.startsWithIgnoreCase(trimmed, "bearer ")) {
+        return trimmed["bearer ".len..];
+    }
+    return trimmed;
+}
+
 pub fn init(allocator: std.mem.Allocator, io: std.Io, token: []const u8) !Self {
-    const bearer = try std.fmt.allocPrint(allocator, "Bearer {s}", .{token});
+    const normalized = normalizeToken(token);
+    const bearer = try std.fmt.allocPrint(allocator, "Bearer {s}", .{normalized});
     errdefer allocator.free(bearer);
-    const cloned_token = try allocator.dupe(u8, token);
+    const cloned_token = try allocator.dupe(u8, normalized);
     errdefer allocator.free(cloned_token);
     return .{
         .allocator = allocator,
@@ -116,4 +125,24 @@ pub fn rest(
             .{ .name = "X-GitHub-Api-Version", .value = "2026-03-10" },
         },
     }, 8);
+}
+
+
+test "normalizeToken trims and strips bearer prefix" {
+    try std.testing.expectEqualStrings(
+        "abc",
+        normalizeToken("abc"),
+    );
+    try std.testing.expectEqualStrings(
+        "abc",
+        normalizeToken("  abc	"),
+    );
+    try std.testing.expectEqualStrings(
+        "abc",
+        normalizeToken("Bearer abc"),
+    );
+    try std.testing.expectEqualStrings(
+        "abc",
+        normalizeToken("bearer abc"),
+    );
 }
